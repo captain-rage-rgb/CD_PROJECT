@@ -1,0 +1,682 @@
+First to install the flex:
+	sudo apt update
+	sudo apt install -y flex bison gcc
+#################################################################################################################
+                             1 and 2
+%{
+#include <stdio.h>
+#include <string.h>
+ 
+char sym[100][50];
+int cnt[100];
+int n = 0;
+ 
+void add(char *id) {
+    for (int i = 0; i < n; i++)
+        if (strcmp(sym[i], id) == 0) { cnt[i]++; return; }
+    strcpy(sym[n], id);
+    cnt[n++] = 1;
+}
+%}
+ 
+%%
+"//".*                        { printf("Single-line Comment\n"); }
+"/*"([^*]|\*+[^*/])*\*+"/"    { printf("Multi-line Comment\n"); }
+"#".*                         { printf("Preprocessor: %s\n", yytext); }
+"int"|"float"|"char"|"double"|"void"|"if"|"else"|"while"|"for"|"do"|"switch"|"case"|"break"|"continue"|"return" { printf("Keyword: %s\n", yytext); }
+[a-zA-Z_][a-zA-Z0-9_]*        { printf("Identifier: %s\n", yytext); add(yytext); }
+[0-9]+\.[0-9]+                { printf("Float Constant: %s\n", yytext); }
+[0-9]+                        { printf("Integer Constant: %s\n", yytext); }
+\"[^\"\n]*\"                  { printf("String: %s\n", yytext); }
+\'.\'                         { printf("Char Constant: %s\n", yytext); }
+"=="|"!="|"<="|">="|"&&"|"||"|"++"|"--"|"+="|"-="|[+\-*/%=<>!&|] { printf("Operator: %s\n", yytext); }
+[;,(){}\[\]]                  { printf("Punctuator: %s\n", yytext); }
+[ \t\n]+                      { }
+.                             { printf("Unknown token: %s\n", yytext); }
+%%
+int main() {
+    printf("Enter C Code (Press Ctrl+D to end):\n");
+    yylex();
+    printf("\n--- SYMBOL TABLE ---\n");
+    printf("Index\tIdentifier\tCount\n");
+    for (int i = 0; i < n; i++)
+        printf("%d\t%s\t\t%d\n", i + 1, sym[i], cnt[i]);
+    return 0;
+}
+ 
+To compile :
+	flex lexer.l
+	gcc lex.yy.c -o lexer
+	./lexer < hello.c     ** note < hello.c is optional **
+ 
+###########################################################################################################
+                                    3(b, d)
+lex:
+ 
+%{
+#include "y.tab.h"
+%}
+ 
+%%
+[a-zA-Z_][a-zA-Z0-9_]*  { return ID; }
+[ \t\n]                 ;
+.                       { return INVALID; }
+%%
+ 
+yacc:
+ 
+%{
+#include <stdio.h>
+#include <stdlib.h>
+int yylex();
+void yyerror(const char *s);
+%}
+ 
+%token ID INVALID
+ 
+%%
+input:
+      ID       { printf("Valid variable name\n"); }
+    | INVALID  { printf("Invalid variable name\n"); }
+    ;
+%%
+ 
+void yyerror(const char *s) {
+    printf("Invalid variable name\n");
+}
+ 
+int main() {
+    printf("Enter a variable name: ");
+    yyparse();
+    return 0;
+}
+ 
+ 
+To compile :
+    yacc -d variable.y
+    lex val.l
+    gcc lex.yy.c y.tab.c -ll
+    ./a.out
+ 
+ Calculator lex : 
+ 
+ 
+%{
+#include "y.tab.h"
+#include <stdlib.h>
+%}
+ 
+%%
+[0-9]+      { yylval = atoi(yytext); return NUM; }
+[ \t]       ;
+\n          { return '\n'; }
+.           { return yytext[0]; }
+%%
+ 
+int yywrap() {
+    return 1;
+}
+ 
+ 
+yacc : 
+ 
+ 
+%{
+#include <stdio.h>
+#include <stdlib.h>
+ 
+int yylex();
+void yyerror(const char *s);
+%}
+ 
+%token NUM
+ 
+%left '+' '-'
+%left '*' '/' '%'
+%right UMINUS
+ 
+%%
+input:
+      input line
+    |
+    ;
+ 
+line:
+      expr '\n'       { printf("Result = %d\n", $1); }
+    | '\n'
+    ;
+ 
+expr:
+      NUM             { $$ = $1; }
+    | expr '+' expr   { $$ = $1 + $3; }
+    | expr '-' expr   { $$ = $1 - $3; }
+    | expr '*' expr   { $$ = $1 * $3; }
+    | expr '/' expr   { 
+                          if ($3 == 0) {
+                              yyerror("Division by zero");
+                              YYERROR;
+                          }
+                          $$ = $1 / $3;
+                      }
+    | expr '%' expr   { $$ = $1 % $3; }
+    | '-' expr %prec UMINUS { $$ = -$2; }
+    | '(' expr ')'    { $$ = $2; }
+    ;
+%%
+ 
+void yyerror(const char *s) {
+    printf("Error: %s\n", s);
+}
+ 
+int main() {
+    printf("Enter arithmetic expressions:\n");
+    yyparse();
+    return 0;
+}
+ 
+ 
+###############################################################################################################
+                                                4
+lex : 
+ 
+%{
+#include "y.tab.h"
+#include <string.h>
+%}
+%%
+[a-zA-Z_][a-zA-Z0-9_]*  { yylval.str = strdup(yytext); return ID; }
+[0-9]+                  { yylval.str = strdup(yytext); return NUM; }
+[ \t\n]                 ;
+.                       { return yytext[0]; }
+%%
+int yywrap() { return 1; }
+ 
+ 
+yacc: 
+ 
+ 
+%{
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+ 
+int yylex();
+void yyerror(const char *s);
+ 
+struct Instruction {
+    char op[10];
+    char arg1[30];
+    char arg2[30];
+    char result[30];
+};
+ 
+struct Instruction quad[100], triple[100];
+ 
+char tempNames[100][30];
+int tempIndex[100];
+ 
+int count = 0, tempCount = 0;
+ 
+char* newtemp() {
+    char temp[30];
+    sprintf(temp, "t%d", tempCount + 1);
+    strcpy(tempNames[tempCount++], temp);
+    return strdup(temp);
+}
+ 
+char* operand(char *s) {
+    for(int i = 0; i < tempCount; i++) {
+        if(strcmp(tempNames[i], s) == 0) {
+            char temp[30];
+            sprintf(temp, "(%d)", tempIndex[i]);
+            return strdup(temp);
+        }
+    }
+    return s;
+}
+ 
+void generate(char *op, char *a, char *b, char *result) {
+    strcpy(quad[count].op, op);
+    strcpy(quad[count].arg1, a);
+    strcpy(quad[count].arg2, b);
+    strcpy(quad[count].result, result);
+ 
+    strcpy(triple[count].op, op);
+    strcpy(triple[count].arg1, operand(a));
+    strcpy(triple[count].arg2, operand(b));
+ 
+    if(op[0] != '=') {
+        tempIndex[tempCount - 1] = count;
+    }
+ 
+    count++;
+}
+ 
+void display() {
+    printf("\nTHREE ADDRESS CODE\n");
+    for(int i = 0; i < count; i++) {
+        if(strcmp(quad[i].op, "=") == 0)
+            printf("%s = %s\n", quad[i].result, quad[i].arg1);
+        else
+            printf("%s = %s %s %s\n", quad[i].result,
+                   quad[i].arg1, quad[i].op, quad[i].arg2);
+    }
+ 
+    printf("\nQUADRUPLES\n");
+    printf("Index\tOp\tArg1\tArg2\tResult\n");
+ 
+    for(int i = 0; i < count; i++) {
+        printf("%d\t%s\t%s\t%s\t%s\n", i,
+               quad[i].op, quad[i].arg1,
+               quad[i].arg2, quad[i].result);
+    }
+ 
+    printf("\nTRIPLES\n");
+    printf("Index\tOp\tArg1\tArg2\n");
+ 
+    for(int i = 0; i < count; i++) {
+        if(strcmp(triple[i].op, "=") == 0)
+            printf("%d\t%s\t%s\t%s\n", i,
+                   triple[i].op, triple[i].arg1,
+                   triple[i].arg2);
+        else
+            printf("%d\t%s\t%s\t%s\n", i,
+                   triple[i].op, triple[i].arg1,
+                   triple[i].arg2);
+    }
+}
+%}
+ 
+%union {
+    char *str;
+}
+ 
+%token <str> ID NUM
+%type <str> expr
+ 
+%left '+' '-'
+%left '*' '/'
+ 
+%%
+input:
+      input stmt
+    |
+    ;
+ 
+stmt:
+      ID '=' expr ';' {
+          generate("=", $3, "-", $1);
+      }
+    ;
+ 
+expr:
+      expr '+' expr {
+          char *temp = newtemp();
+          generate("+", $1, $3, temp);
+          $$ = temp;
+      }
+    | expr '-' expr {
+          char *temp = newtemp();
+          generate("-", $1, $3, temp);
+          $$ = temp;
+      }
+    | expr '*' expr {
+          char *temp = newtemp();
+          generate("*", $1, $3, temp);
+          $$ = temp;
+      }
+    | expr '/' expr {
+          char *temp = newtemp();
+          generate("/", $1, $3, temp);
+          $$ = temp;
+      }
+    | '(' expr ')' {
+          $$ = $2;
+      }
+    | ID {
+          $$ = $1;
+      }
+    | NUM {
+          $$ = $1;
+      }
+    ;
+%%
+ 
+void yyerror(const char *s) {
+    printf("Invalid expression\n");
+}
+ 
+int main() {
+    printf("Enter an expression (end with ;):\n");
+    yyparse();
+    display();
+    return 0;
+}
+ 
+ 
+ 
+To compile :
+    yacc -d tac.y
+    flex tac.l
+    gcc lex.yy.c y.tab.c -ll
+    ./a.out < input.txt 
+ 
+ 
+#####################################################################################################################
+                                             5
+ 
+lex : 
+ 
+%{
+#include "y.tab.h"
+#include <string.h>
+%}
+%%
+"int"                   { return INT; }
+"float"                 { return FLOAT; }
+[0-9]+"."[0-9]+         { return FLOAT_NUM; }
+[0-9]+                  { return INT_NUM; }
+[a-zA-Z_][a-zA-Z0-9_]*  { yylval.str = strdup(yytext); return ID; }
+[ \t\n]                 ;
+.                       { return yytext[0]; }
+%%
+int yywrap() { return 1; }
+ 
+ 
+yacc: 
+ 
+ 
+%{
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+ 
+int yylex();
+void yyerror(const char *s);
+ 
+int sym[100];
+char names[100][50];
+int n = 0;
+ 
+int gettype(char *s) {
+    for(int i = 0; i < n; i++) {
+        if(strcmp(names[i], s) == 0)
+            return sym[i];
+    }
+    return 0;
+}
+ 
+void insert(char *s, int type) {
+    for(int i = 0; i < n; i++) {
+        if(strcmp(names[i], s) == 0) {
+            sym[i] = type;
+            return;
+        }
+    }
+ 
+    strcpy(names[n], s);
+    sym[n++] = type;
+}
+%}
+ 
+%union {
+    char *str;
+    int type;
+}
+ 
+%token INT FLOAT ID INT_NUM FLOAT_NUM
+%type <type> datatype expr
+%type <str> ID
+ 
+%%
+input:
+      input stmt
+    |
+    ;
+ 
+stmt:
+      datatype ID ';' {
+          insert($2, $1);
+          printf("Variable declared successfully\n");
+      }
+    | ID '=' expr ';' {
+          int t = gettype($1);
+ 
+          if(t == 0)
+              printf("Error: Undeclared variable\n");
+          else if(t == $3)
+              printf("Type checking successful\n");
+          else
+              printf("Type mismatch\n");
+      }
+    ;
+ 
+datatype:
+      INT   { $$ = 1; }
+    | FLOAT { $$ = 2; }
+    ;
+ 
+expr:
+      INT_NUM   { $$ = 1; }
+    | FLOAT_NUM { $$ = 2; }
+    | ID        { $$ = gettype($1); }
+    ;
+%%
+ 
+void yyerror(const char *s) {
+    printf("Invalid statement\n");
+}
+ 
+int main() {
+    printf("Enter declarations and assignments:\n");
+    yyparse();
+    return 0;
+}
+ 
+ 
+** use a text file as input.txt
+ 
+int a;
+float b;
+a = 10;
+b = 10.5;
+a = 10.5;
+ 
+To compile:
+    yacc -d type.y
+    flex type.l
+    gcc lex.yy.c y.tab.c -ll
+    ./a.out < input.txt
+ 
+ 
+#####################################################################################################################
+                                              6
+ 
+C code :
+ 
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+ 
+int isnum(char *s) {
+    char *end;
+    strtoll(s, &end, 10);
+    return *s != '\0' && *end == '\0';
+}
+ 
+void optimize(char *line) {
+    char lhs[50], a[50], op[10], b[50];
+    long long x, y, res;
+ 
+    int n = sscanf(line, "%49s = %49s %9s %49s", lhs, a, op, b);
+ 
+    if(n == 2) {
+        printf("%s = %s\n", lhs, a);
+        return;
+    }
+ 
+    if(n != 4) return;
+ 
+    int na = isnum(a);
+    int nb = isnum(b);
+ 
+    if(na && nb) {
+        x = atoll(a);
+        y = atoll(b);
+ 
+        if(strcmp(op, "+") == 0) res = x + y;
+        else if(strcmp(op, "-") == 0) res = x - y;
+        else if(strcmp(op, "*") == 0) res = x * y;
+        else if(strcmp(op, "/") == 0 && y != 0) res = x / y;
+        else {
+            printf("%s = %s %s %s\n", lhs, a, op, b);
+            return;
+        }
+ 
+        printf("%s = %lld\n", lhs, res);
+    }
+ 
+    else if(strcmp(op, "+") == 0 && strcmp(b, "0") == 0) {
+        printf("%s = %s\n", lhs, a);
+    }
+ 
+    else if(strcmp(op, "+") == 0 && strcmp(a, "0") == 0) {
+        printf("%s = %s\n", lhs, b);
+    }
+ 
+    else if(strcmp(op, "-") == 0 && strcmp(b, "0") == 0) {
+        printf("%s = %s\n", lhs, a);
+    }
+ 
+    else if(strcmp(op, "*") == 0 && (strcmp(b, "1") == 0)) {
+        printf("%s = %s\n", lhs, a);
+    }
+ 
+    else if(strcmp(op, "*") == 0 && (strcmp(a, "1") == 0)) {
+        printf("%s = %s\n", lhs, b);
+    }
+ 
+    else if(strcmp(op, "*") == 0 && (strcmp(a, "0") == 0 || strcmp(b, "0") == 0)) {
+        printf("%s = 0\n", lhs);
+    }
+ 
+    else if(strcmp(op, "/") == 0 && strcmp(b, "1") == 0) {
+        printf("%s = %s\n", lhs, a);
+    }
+ 
+    else if(strcmp(op, "*") == 0 && strcmp(b, "2") == 0) {
+        printf("%s = %s + %s\n", lhs, a, a);
+    }
+ 
+    else if(strcmp(op, "*") == 0 && strcmp(a, "2") == 0) {
+        printf("%s = %s + %s\n", lhs, b, b);
+    }
+ 
+    else {
+        printf("%s = %s %s %s\n", lhs, a, op, b);
+    }
+}
+ 
+int main() {
+    char line[200];
+ 
+    printf("Enter three address code (Ctrl+D to finish):\n");
+ 
+    while(fgets(line, sizeof(line), stdin)) {
+        optimize(line);
+    }
+ 
+    return 0;
+}
+ 
+ 
+input: 
+ 
+    t1 = 10 + 20
+    t2 = a * 2
+    t3 = b * 1
+    t4 = c + 0
+    t5 = d * 0
+    t6 = 50 - 10
+    t7 = p / 1
+    t8 = x + y
+ 
+ 
+To compile : 
+    gcc opt.c
+    ./a.out < input.txt
+ 
+##########################################################################################################################
+                                                 7
+ 
+C code :
+ 
+#include <stdio.h>
+#include <string.h>
+ 
+int main() {
+    FILE *fp;
+    char line[100];
+    char result[30], a[30], op[10], b[30];
+ 
+    fp = fopen("input.txt", "r");
+ 
+    if(fp == NULL) {
+        printf("Cannot open input file\n");
+        return 1;
+    }
+ 
+    printf("8086 Assembly Code:\n\n");
+ 
+    while(fgets(line, sizeof(line), fp)) {
+        int n = sscanf(line, "%s = %s %s %s", result, a, op, b);
+ 
+        if(n == 2) {
+            printf("MOV AX, %s\n", a);
+            printf("MOV %s, AX\n", result);
+        }
+ 
+        else if(n == 4) {
+            printf("MOV AX, %s\n", a);
+ 
+            if(strcmp(op, "+") == 0)
+                printf("ADD AX, %s\n", b);
+ 
+            else if(strcmp(op, "-") == 0)
+                printf("SUB AX, %s\n", b);
+ 
+            else if(strcmp(op, "*") == 0) {
+                printf("MOV BX, %s\n", b);
+                printf("MUL BX\n");
+            }
+ 
+            else if(strcmp(op, "/") == 0) {
+                printf("MOV BX, %s\n", b);
+                printf("MOV DX, 0\n");
+                printf("DIV BX\n");
+            }
+ 
+            printf("MOV %s, AX\n", result);
+        }
+    }
+ 
+    fclose(fp);
+ 
+    return 0;
+}
+ 
+ 
+input : 
+ 
+    t1 = c * d
+    t2 = b + t1
+    a = t2
+ 
+To compile : 
+    gcc codegen.c
+    ./a.out
+ 
+ 
+ 
+                            ** ggs ** 
+ 
